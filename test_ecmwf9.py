@@ -1,10 +1,11 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 import sqlite3
 import unittest
 from unittest.mock import patch, Mock
 
 import ecmwf9 as api
 import elbameteo as core
+from fetch_latest import recent_runs
 
 
 def fixture(run):
@@ -16,6 +17,13 @@ def fixture(run):
 
 
 class HourlyTests(unittest.TestCase):
+    def test_latest_candidates_start_from_current_cycle(self):
+        now = datetime(2026, 9, 5, 13, 27, tzinfo=core.UTC)
+        self.assertEqual(
+            [core.stamp(run) for run in recent_runs(now, 12)],
+            ["2026-09-05T12:00:00Z", "2026-09-05T06:00:00Z"],
+        )
+
     def test_window_and_interpolation_boundaries(self):
         for hour in (0, 6, 12, 18):
             run = core.parse_run(f"2026-09-02T{hour:02d}:00Z")

@@ -119,6 +119,9 @@ Per ottenere il PNG di una scadenza specifica usare, per esempio, `--step 24`.
 Il workflow `.github/workflows/publish-forecast.yml` aggiorna la previsione e
 pubblica la pagina ogni tre ore (al minuto 17, orario UTC). È possibile avviarlo
 anche manualmente dalla scheda **Actions** del repository.
+Il runner prova le run ECMWF dalla più recente alla più vecchia e pubblica la
+prima che contiene tutti i 14 punti e tutte le 145 ore: non applica un ritardo
+fisso e non sostituisce mai una previsione completa con una parziale.
 
 Dopo avere caricato il progetto su un repository GitHub:
 

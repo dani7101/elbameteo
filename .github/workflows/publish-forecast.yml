@@ -36,17 +36,10 @@ jobs:
       - name: Installa le dipendenze
         run: python -m pip install -r requirements-pages.txt
 
-      - name: Individua la run ECMWF da acquisire
-        id: forecast-run
-        shell: bash
-        run: |
-          run=$(python -c "import json; from elbameteo import candidate_runs, stamp; config=json.load(open('config.json', encoding='utf-8')); print(stamp(candidate_runs(config)[0]))")
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-
-      - name: Acquisisce la previsione ECMWF a 9 km
+      - name: Acquisisce l'ultima run ECMWF completa
         id: fetch
         continue-on-error: true
-        run: python elbameteo.py fetch --run "${{ steps.forecast-run.outputs.run }}" --product fc
+        run: python fetch_latest.py
 
       - name: Genera HTML e PNG
         if: steps.fetch.outcome == 'success'
