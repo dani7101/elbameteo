@@ -1,0 +1,6 @@
+# Solo per rigenerare la mappa di riferimento; il collector non li richiede.
+-r requirements.txt
+matplotlib==3.11.1
+pyproj==3.7.2
+shapely==2.1.2
+pyshp==3.1.6
