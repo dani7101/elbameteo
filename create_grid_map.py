@@ -61,14 +61,9 @@ land = coast()
 grid_rows = grid()
 towns = json.loads((DATA / "towns.json").read_text(encoding="utf-8"))
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11})
-fig = plt.figure(figsize=(16, 11), facecolor="#f7f9fa")
-ax = fig.add_axes([.055, .145, .705, .70], facecolor="#e6f0f5")
-side = fig.add_axes([.80, .16, .18, .67])
-side.set_axis_off()
+fig = plt.figure(figsize=(12, 9), facecolor="#f7f9fa")
+ax = fig.add_axes([.09, .11, .88, .85], facecolor="#e6f0f5")
 ink, blue, green = "#173440", "#226eab", "#d8e6d8"
-
-fig.text(.055, .934, "L’Elba: un’area per ogni punto", fontsize=29, fontweight="bold", color=ink)
-fig.text(.057, .891, "ECMWF IFS 9 km · aree di assegnazione al nodo più vicino", fontsize=15, color="#506672")
 
 polygons = list(land.geoms) if hasattr(land, "geoms") else [land]
 for polygon in polygons:
@@ -139,19 +134,6 @@ lat2 = next(lat for r, lat, _ in grid_rows if r == 673)
 lon1, lon2 = 360 * 77 / 2704, 360 * 78 / 2704
 dx = geod.inv(lon1, lat, lon2, lat)[2] / 1000
 dy = geod.inv(lon1, lat, lon1, lat2)[2] / 1000
-side.text(0, .96, "COME LEGGERE\nLA MAPPA", color=ink, fontsize=16, fontweight="bold", va="top")
-side.scatter([.025], [.795], s=72, color=blue)
-side.text(.11, .795, "Punto di previsione\nECMWF", va="center", fontsize=12, color=ink)
-side.plot([0, .08], [.695, .695], color=blue, lw=1.4)
-side.text(.11, .695, "Confine tra due aree", va="center", fontsize=10.5, color=ink)
-side.text(0, .595, "STESSA AREA,\nSTESSO NODO", fontsize=15, color=blue, fontweight="bold", va="top")
-side.text(0, .485, "Ogni posizione viene\nassociata al punto\npiù vicino. Il confine\npassa a metà strada\nfra nodi adiacenti.", fontsize=12, color=ink, linespacing=1.5, va="top")
-side.text(0, .235, "P05–P18", fontsize=23, color=blue, fontweight="bold")
-side.text(0, .192, "14 nodi proposti per\nisola e coste, evidenziati\nin azzurro.", fontsize=11.5, color=ink, linespacing=1.5, va="top")
-side.text(0, .015, "Passo locale: 10,9 × 7,8 km", fontsize=10.5, color="#607480")
-side.set_xlim(-.01, 1)
-side.set_ylim(0, 1)
-
 # Cornice in coordinate geografiche; proiezione locale in km, proporzioni reali.
 xmin, ymin = xy(BOUNDS[0], BOUNDS[1])
 xmax, ymax = xy(BOUNDS[2], BOUNDS[3])
@@ -177,10 +159,6 @@ for pos in (0, 5, 10):
     ax.text(bx+pos, by-.8, str(pos) + (" km" if pos == 10 else ""), ha="center", fontsize=9, color=ink)
 ax.annotate("N", xy=(xmax-1.8, ymax-3), xytext=(xmax-1.8, ymax-1.3), ha="center",
             color=ink, fontsize=12, fontweight="bold", arrowprops=dict(arrowstyle="<|-", color=ink, lw=1.6))
-
-fig.text(.055, .091, "I punti sono all’interno delle rispettive aree; lo sfalsamento della griglia genera bordi leggermente obliqui.", fontsize=11, color=ink)
-fig.text(.055, .059, "Nodi: ECMWF O1280 / ecCodes · Costa: Natural Earth 1:10m (generalizzata) · Località: GeoNames / Open-Meteo", fontsize=9, color="#6b7b84")
-fig.text(.055, .038, "Aree geometriche di prossimità (Voronoi), approssimate in proiezione locale: non celle fisiche ufficiali ECMWF · 3 settembre 2026", fontsize=9, color="#6b7b84")
 
 image_path = OUT / "elba_aree_ecmwf_9km.png"
 fig.savefig(image_path, dpi=180, facecolor=fig.get_facecolor())
