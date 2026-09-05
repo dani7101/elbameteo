@@ -42,10 +42,17 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Acquisisce la previsione ECMWF a 9 km
+        id: fetch
+        continue-on-error: true
         run: python elbameteo.py fetch --run "${{ steps.forecast-run.outputs.run }}" --product fc
 
       - name: Genera HTML e PNG
+        if: steps.fetch.outcome == 'success'
         run: python forecast_visualization.py
+
+      - name: Segnala il riuso dell'ultima previsione valida
+        if: steps.fetch.outcome != 'success'
+        run: echo "Open-Meteo non disponibile; pubblico i file validi presenti nel repository."
 
       - name: Prepara il sito statico
         shell: bash
