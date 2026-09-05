@@ -20,6 +20,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      fetch-outcome: ${{ steps.fetch.outcome }}
     steps:
       - name: Scarica il repository
         uses: actions/checkout@v6
@@ -81,3 +83,13 @@ jobs:
       - name: Pubblica su GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  report-fetch-failure:
+    runs-on: ubuntu-latest
+    needs: [build, deploy]
+    if: needs.build.outputs.fetch-outcome != 'success'
+    steps:
+      - name: Segnala il mancato aggiornamento dei dati
+        run: |
+          echo "La pagina precedente resta online, ma Open-Meteo non ha fornito i nuovi dati."
+          exit 1
