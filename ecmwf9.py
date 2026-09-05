@@ -13,6 +13,20 @@ ENDPOINT = "https://single-runs-api.open-meteo.com/v1/forecast"
 VARIABLES = ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m")
 
 
+def api_get(params):
+    """Ritenta i rallentamenti e gli errori temporanei del servizio meteo."""
+    for attempt in range(4):
+        try:
+            response = requests.get(ENDPOINT, params=params, timeout=(30, 180))
+            response.raise_for_status()
+            return response
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt == 3:
+                raise
+            core.LOG.warning("API meteo temporaneamente irraggiungibile (%s); nuovo tentativo", exc)
+            time.sleep(2 ** attempt)
+
+
 def init_db(db):
     db.executescript("""
       CREATE TABLE IF NOT EXISTS hourly9 (
@@ -75,8 +89,7 @@ def collect(config, db, cid, runs):
                           cell_selection="nearest", elevation="nan")
             try:
                 core.LOG.info("ECMWF 9 km: %s %s, +0..144h", key[1], key[2])
-                response = requests.get(ENDPOINT, params=params, timeout=(15, 90))
-                response.raise_for_status()
+                response = api_get(params)
                 rows = normalize(response.json(), run, config["horizon_hours"])
                 # Una run/localita e completa solo quando tutte le 145 scadenze sono valide.
                 with db:
