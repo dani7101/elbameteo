@@ -20,6 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       fetch-outcome: ${{ steps.fetch.outcome }}
     steps:
@@ -36,20 +37,39 @@ jobs:
       - name: Installa le dipendenze
         run: python -m pip install -r requirements-pages.txt
 
+      - name: Ripristina i punti meteo gia acquisiti
+        id: meteo-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: data/elbameteo.sqlite*
+          key: meteo-v1-${{ runner.os }}-${{ hashFiles('config.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            meteo-v1-${{ runner.os }}-${{ hashFiles('config.json') }}-
+
       - name: Acquisisce l'ultima run ECMWF completa
         id: fetch
         continue-on-error: true
+        timeout-minutes: 18
         run: python fetch_latest.py
+
+      - name: Conserva anche i download parziali
+        if: always() && (steps.fetch.outcome == 'success' || steps.fetch.outcome == 'failure')
+        uses: actions/cache/save@v5
+        with:
+          path: data/elbameteo.sqlite*
+          key: ${{ steps.meteo-cache.outputs.cache-primary-key }}
 
       - name: Genera HTML e PNG
         if: steps.fetch.outcome == 'success'
         run: python forecast_visualization.py
 
-      - name: Segnala il riuso dell'ultima previsione valida
+      - name: Mantiene online la previsione gia pubblicata
         if: steps.fetch.outcome != 'success'
-        run: echo "Open-Meteo non disponibile; pubblico i file validi presenti nel repository."
+        run: |
+          echo "Acquisizione incompleta; nessuna pubblicazione. Il sito gia online resta invariato."
 
       - name: Prepara il sito statico
+        if: steps.fetch.outcome == 'success'
         shell: bash
         run: |
           mkdir -p _site/maps
@@ -59,9 +79,11 @@ jobs:
           touch _site/.nojekyll
 
       - name: Configura GitHub Pages
+        if: steps.fetch.outcome == 'success'
         uses: actions/configure-pages@v5
 
       - name: Carica il sito
+        if: steps.fetch.outcome == 'success'
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
@@ -72,6 +94,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    if: needs.build.outputs.fetch-outcome == 'success'
     steps:
       - name: Pubblica su GitHub Pages
         id: deployment
@@ -79,8 +102,8 @@ jobs:
 
   report-fetch-failure:
     runs-on: ubuntu-latest
-    needs: [build, deploy]
-    if: needs.build.outputs.fetch-outcome != 'success'
+    needs: build
+    if: needs.build.outputs.fetch-outcome == 'failure'
     steps:
       - name: Segnala il mancato aggiornamento dei dati
         run: |

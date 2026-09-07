@@ -13,15 +13,15 @@ ENDPOINT = "https://single-runs-api.open-meteo.com/v1/forecast"
 VARIABLES = ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m")
 
 
-def api_get(params):
+def api_get(params, attempts=4, timeout=(30, 180)):
     """Ritenta i rallentamenti e gli errori temporanei del servizio meteo."""
-    for attempt in range(4):
+    for attempt in range(attempts):
         try:
-            response = requests.get(ENDPOINT, params=params, timeout=(30, 180))
+            response = requests.get(ENDPOINT, params=params, timeout=timeout)
             response.raise_for_status()
             return response
         except (requests.Timeout, requests.ConnectionError) as exc:
-            if attempt == 3:
+            if attempt == attempts - 1:
                 raise
             core.LOG.warning("API meteo temporaneamente irraggiungibile (%s); nuovo tentativo", exc)
             time.sleep(2 ** attempt)
@@ -76,35 +76,65 @@ def normalize(payload, run, horizon):
     return rows
 
 
-def collect(config, db, cid, runs):
+def collect(config, db, cid, runs, retry_rounds=3, deadline=None):
+    """Salva ogni punto valido e ritenta solo gli errori temporanei, senza fermare il giro."""
+    if retry_rounds < 1:
+        raise ValueError("retry_rounds deve essere positivo")
     errors = 0
     for run in runs:
-        for location in config["locations"]:
-            key = (cid, core.stamp(run), location["id"])
-            if db.execute("SELECT 1 FROM downloads9 WHERE config_id=? AND run=? AND location=?", key).fetchone():
-                continue
-            params = dict(latitude=location["lat"], longitude=location["lon"], models="ecmwf_ifs",
-                          hourly=",".join(VARIABLES), run=run.strftime("%Y-%m-%dT%H:%M"),
-                          forecast_days=7, wind_speed_unit="ms", timezone="GMT",
-                          cell_selection="nearest", elevation="nan")
-            try:
-                core.LOG.info("ECMWF 9 km: %s %s, +0..144h", key[1], key[2])
-                response = api_get(params)
-                rows = normalize(response.json(), run, config["horizon_hours"])
-                # Una run/localita e completa solo quando tutte le 145 scadenze sono valide.
-                with db:
-                    if db.execute("SELECT 1 FROM downloads9 WHERE config_id=? AND run=? AND location=?", key).fetchone():
-                        continue
-                    db.executemany("INSERT INTO hourly9 VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                   [(*key, *r.values()) for r in rows])
-                    db.execute("INSERT INTO downloads9 VALUES (?,?,?,?,?,?,?)",
-                               (*key, core.stamp(datetime.now(core.UTC)), json.dumps(params), response.text,
-                                hashlib.sha256(response.content).hexdigest()))
-            except Exception:
-                errors += 1
-                core.LOG.exception("Run/localita non completata; riprovo al prossimo ciclo")
+        pending = list(config["locations"])
+        for attempt in range(retry_rounds):
+            retry = []
+            for location in pending:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError("Tempo di acquisizione esaurito; i punti validi restano salvati")
+                key = (cid, core.stamp(run), location["id"])
+                if db.execute("SELECT 1 FROM downloads9 WHERE config_id=? AND run=? AND location=?", key).fetchone():
+                    continue
+                try:
+                    collect_location(config, db, cid, run, location)
+                except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+                    transient = isinstance(exc, (requests.Timeout, requests.ConnectionError)) or (
+                        isinstance(exc, requests.HTTPError) and exc.response is not None
+                        and (exc.response.status_code == 429 or exc.response.status_code >= 500)
+                    )
+                    reason = "errore temporaneo di rete/API" if transient else "risposta rifiutata o dati incompleti/non validi"
+                    core.LOG.warning("Run %s punto %s: %s (%s)", key[1], key[2], reason, exc)
+                    if transient and attempt + 1 < retry_rounds:
+                        retry.append(location)
+                    else:
+                        errors += 1
+            if not retry:
                 break
+            delay = 10 * 2 ** attempt
+            if deadline is not None:
+                delay = min(delay, max(0, deadline - time.monotonic()))
+            core.LOG.info("Run %s: ritento solo i punti %s fra %ss", core.stamp(run),
+                          ", ".join(p["id"] for p in retry), delay)
+            time.sleep(delay)
+            pending = retry
     return errors
+
+
+def collect_location(config, db, cid, run, location):
+    """Una sola richiesta; il coordinatore gestisce i successivi giri di recupero."""
+    key = (cid, core.stamp(run), location["id"])
+    params = dict(latitude=location["lat"], longitude=location["lon"], models="ecmwf_ifs",
+                  hourly=",".join(VARIABLES), run=run.strftime("%Y-%m-%dT%H:%M"),
+                  forecast_days=7, wind_speed_unit="ms", timezone="GMT",
+                  cell_selection="nearest", elevation="nan")
+    core.LOG.info("ECMWF 9 km: %s %s, +0..144h", key[1], key[2])
+    response = api_get(params, attempts=1, timeout=(15, 60))
+    rows = normalize(response.json(), run, config["horizon_hours"])
+    # Una run/localita e completa solo quando tutte le 145 scadenze sono valide.
+    with db:
+        if db.execute("SELECT 1 FROM downloads9 WHERE config_id=? AND run=? AND location=?", key).fetchone():
+            return
+        db.executemany("INSERT INTO hourly9 VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                       [(*key, *r.values()) for r in rows])
+        db.execute("INSERT INTO downloads9 VALUES (?,?,?,?,?,?,?)",
+                   (*key, core.stamp(datetime.now(core.UTC)), json.dumps(params), response.text,
+                    hashlib.sha256(response.content).hexdigest()))
 
 
 def export_rows(db, cid):

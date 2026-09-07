@@ -122,6 +122,13 @@ anche manualmente dalla scheda **Actions** del repository.
 Il runner prova le run ECMWF dalla più recente alla più vecchia e pubblica la
 prima che contiene tutti i 14 punti e tutte le 145 ore: non applica un ritardo
 fisso e non sostituisce mai una previsione completa con una parziale.
+Ogni punto valido viene salvato subito. Un timeout non interrompe gli altri
+punti: vengono effettuati fino a tre giri, ritentando soltanto i punti con
+errori di connessione, timeout o risposte HTTP 429/5xx, con pause di 10 e 20
+secondi. Le risposte rifiutate o con dati non validi vengono segnalate
+separatamente e potranno essere recuperate alla prossima esecuzione.
+Il limite complessivo di acquisizione è 15 minuti, verificato fra le richieste
+(la richiesta in corso può aggiungere il proprio timeout).
 
 Dopo avere caricato il progetto su un repository GitHub:
 
@@ -132,8 +139,13 @@ Dopo avere caricato il progetto su un repository GitHub:
 
 La pagina sarà disponibile all'indirizzo mostrato dal job `deploy`, normalmente
 `https://NOME-UTENTE.github.io/NOME-REPOSITORY/`. Il database SQLite usato dal
-runner è temporaneo: ogni esecuzione acquisisce direttamente l'ultima run ECMWF
-utile, quindi il sito non dipende dai file presenti sul computer locale.
+runner viene ripristinato e salvato con GitHub Actions Cache, anche dopo un
+download incompleto: le esecuzioni successive riprendono dai punti mancanti.
+La cache è separata per configurazione e non dipende dal computer locale;
+se GitHub la elimina, l'acquisizione riparte da zero.
+Se nessuna emissione è completa, non vengono generati o pubblicati artefatti:
+la pagina già online resta invariata, senza ripubblicare i file del repository.
+Il job `report-fetch-failure` continua a segnalare il mancato aggiornamento.
 
 La curva verde è un **indice di prevedibilità ensemble** da 0 a 100: combina
 l'accordo fra le direzioni previste dai 51 membri ECMWF e la dispersione delle
